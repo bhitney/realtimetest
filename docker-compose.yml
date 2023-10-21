@@ -1,0 +1,8 @@
+version: '3.4'
+
+services:
+  realtimetest:
+    image: realtimetest
+    build:
+      context: .
+      dockerfile: ./Dockerfile
