@@ -7,20 +7,20 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED=1
 
-ENV increasechance 0.505
-ENV sigma 0.04
+ENV increasechance 0.502
+ENV sigma 0.05
 ENV mu 1
 ENV stockstartprice 100
-ENV stockceiling 1000
+ENV stockceiling 1200
 ENV stockfloor 1
 ENV marketcorrectionchance 0.002
 ENV marketcorrectionlength 60
-ENV marketcorrectionmodifier 0.2
+ENV marketcorrectionmodifier 0.7
 ENV individualcorrectionchance 0.005
-ENV individualcorrectionlength 60
-ENV individualcorrectionmodifier 0.3
+ENV individualcorrectionlength 30
+ENV individualcorrectionmodifier 0.4
 
-ENV eventconnectionstring "Endpoint=sb://<<SERVICE BUS NAME>>.servicebus.windows.net/;SharedAccessKey=<<ACCESS KEY>>"
+ENV eventconnectionstring "Endpoint=sb://<<NAME>>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=<<KEY>>"
 ENV eventhubname "fwtheventhub"
 
 # Install pip requirements

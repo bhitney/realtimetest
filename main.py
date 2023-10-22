@@ -14,10 +14,10 @@ from azure.eventhub.aio import EventHubProducerClient
 EVENT_HUB_CONNECTION_STR = os.environ['eventconnectionstring']
 EVENT_HUB_NAME = os.environ['eventhubname']
 
-Mu = float(os.environ['mu']) # 1
-Sigma = float(os.environ['sigma']) # 0.04
-IncreaseChance = float(os.environ['increasechance']) # 0.45
-StockStartPrice = float(os.environ['stockstartprice']) # 100
+Mu = float(os.environ['mu']) 
+Sigma = float(os.environ['sigma']) 
+IncreaseChance = float(os.environ['increasechance']) 
+StockStartPrice = float(os.environ['stockstartprice']) 
 
 MarketCorrectionChance = float(os.environ['marketcorrectionchance']) 
 MarketCorrectionLength = float(os.environ['marketcorrectionlength']) 
@@ -27,8 +27,8 @@ IndividualCorrectionChance = float(os.environ['individualcorrectionchance'])
 IndividualCorrectionLength = float(os.environ['individualcorrectionlength']) 
 IndividualCorrectionModifier = float(os.environ['individualcorrectionmodifier']) 
 
-StockFloor = float(os.environ['stockfloor']) # 1
-StockCeiling = float(os.environ['stockceiling']) # 1000
+StockFloor = float(os.environ['stockfloor']) 
+StockCeiling = float(os.environ['stockceiling']) 
 
 print("Mu: " + str(Mu))
 print("Sigma: " + str(Sigma))
@@ -66,6 +66,7 @@ async def run():
 
         while True:
             
+            timestamp = str(datetime.datetime.utcnow())
             event_data_batch = await producer.create_batch() # create a batch
 
             if isMarketCorrection == False and random.random() < MarketCorrectionChance:
@@ -74,7 +75,9 @@ async def run():
                     correctionUpward = random.random() < IncreaseChance
                     print("Market Correction (" + ("UP" if correctionUpward else "DOWN") + ")")
 
-            for record in dataTable:
+            totalMarketCap = 0
+
+            for record in dataTable:    
                 symbol = record[0]
                 price = record[1]
                 stockCorrection = record[2]
@@ -119,11 +122,13 @@ async def run():
                 record[3] = stockCorrectionLength
                 record[4] = stockCorrectionIncrease
                  
-                reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(datetime.datetime.utcnow())}
+                reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp}
                 s = json.dumps(reading)
                 print(s)
 
                 event_data_batch.add(EventData(s)) # add event data to the batch
+
+                totalMarketCap = totalMarketCap + newPrice
 
             # send the batch of events to the event hub
             await producer.send_batch(event_data_batch)
@@ -132,6 +137,7 @@ async def run():
                 currentCorrectionCount = currentCorrectionCount - 1
 
             count = count + 1
+            print(str(count) + ": Total Market Cap: " + str(totalMarketCap))
          
             time.sleep(1)
 
