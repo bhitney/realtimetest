@@ -109,11 +109,11 @@ async def run():
                         stockCorrectionLength = stockCorrectionLength - 1
 
                 if priceIncrease:
-                    newPrice = math.ceil(price + priceIncDec)
+                    newPrice = round(price + priceIncDec,2)
                     newPrice = (newPrice if newPrice < StockCeiling else StockCeiling)
                     #increase
                 else:
-                    newPrice = math.floor(price - priceIncDec)
+                    newPrice = round(price - priceIncDec,2)
                     newPrice = (newPrice if newPrice > StockFloor else StockFloor)
                     #decrease
 
@@ -137,8 +137,8 @@ async def run():
                 currentCorrectionCount = currentCorrectionCount - 1
 
             count = count + 1
-            print(str(count) + ": Total Market Cap: " + str(totalMarketCap))
-         
+            print(f'{count} Total Market Cap: {totalMarketCap:.2f} (Avg {totalMarketCap/len(dataTable):.2f})')
+           
             time.sleep(1)
 
 asyncio.run(run())    
