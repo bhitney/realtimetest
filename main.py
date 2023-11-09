@@ -11,13 +11,8 @@ print("Starting...")
 from azure.eventhub import EventData
 from azure.eventhub.aio import EventHubProducerClient
 
-EVENT_HUB_CONNECTION_STR = os.environ['eventconnectionstring']
-EVENT_HUB_NAME = os.environ['eventhubname']
-
-MarketCorrectionIncreaseChance = float(os.environ['marketcorrectionincreasechance']) 
-MarketCorrectionChance = float(os.environ['marketcorrectionchance']) 
-MarketCorrectionLength = float(os.environ['marketcorrectionlength']) 
-MarketCorrectionModifier = float(os.environ['marketcorrectionmodifier']) 
+EVENT_HUB_CONNECTION_STR = os.environ['EVENTHUBCONNECTIONSTRING']
+EVENT_HUB_NAME = os.environ['EVENTHUBNAME']
 
 WHO_vars = os.environ['WHO_vars'].split('|')
 WHAT_vars = os.environ['WHAT_vars'].split('|')
@@ -27,6 +22,12 @@ BCUZ_vars = os.environ['BCUZ_vars'].split('|')
 TMRW_vars = os.environ['TMRW_vars'].split('|')
 TDY_vars = os.environ['TDY_vars'].split('|')
 IDGD_vars = os.environ['IDGD_vars'].split('|')
+
+EventsJson = os.environ['EVENTS']
+
+# Extended stock info is intended to help show correlation on the data on the backend
+# by including events (up or down) in the data feed
+ExtendedStockInfo = int(os.environ['EXTENDEDSTOCKINFO'])
 
 # stock variables: 0 start price | 1 min price | 2 max price | 3 mu | 4 sigma | 
 # 5 correction chance | 6 correction length | 7 correction modifier |
@@ -78,6 +79,7 @@ print("BCUZ: ", BCUZ_vars)
 print("TMRW: ", TMRW_vars)
 print("TDY: ", TDY_vars)
 print("IDGD: ", IDGD_vars)
+print("Events JSON: ", EventsJson)
 
 dataTable = [
      ['WHO', StockVariables(WHO_vars)] 
@@ -90,37 +92,73 @@ dataTable = [
     ,['IDGD', StockVariables(IDGD_vars)] 
     ]
 
+numEvents = 0
+
+
+try:
+    AllEvents = json.loads(EventsJson)
+    numEvents = len(AllEvents['events'])
+except Exception as e:
+    numEvents = 0
+    print("Error parsing JSON, continuing without events.")
+    print(e)
+
+if numEvents > 0:
+    for event in AllEvents['events']:
+        event['durationCount'] = event['duration']
+        if (event['type'] == 'periodic'):
+            event['frequencyCount'] = event['frequency']
+        
 totalInitialMarketCap = 0
 for record in dataTable:
     totalInitialMarketCap = totalInitialMarketCap + record[1].startPrice
     
 async def run():
+
     # Create a producer client to send messages to the event hub.
-    # Specify a connection string to your event hubs namespace and
-    # the event hub name.
     producer = EventHubProducerClient.from_connection_string(
         conn_str=EVENT_HUB_CONNECTION_STR, eventhub_name=EVENT_HUB_NAME
     )
 
     async with producer:
 
-        isMarketCorrection = False # track fake stock market correction
-        currentCorrectionCount = MarketCorrectionLength
-        correctionUpward = False
+        isEvent = False
+        currentEvent = ""
         count = 0
         aboveMarketCount = 1
         belowMarketCount = 1
+        errorCount = 0
 
         while True:
             
             timestamp = str(datetime.datetime.utcnow())
-            event_data_batch = await producer.create_batch() # create a batch
 
-            if isMarketCorrection == False and random.random() < MarketCorrectionChance:
-                    isMarketCorrection = True
-                    currentCorrectionCount = MarketCorrectionLength
-                    correctionUpward = random.random() < MarketCorrectionIncreaseChance
-                    print("Market Correction (" + ("UP" if correctionUpward else "DOWN") + ")")
+            try:
+                event_data_batch = await producer.create_batch() # create a batch
+            except Exception as e:
+                    errorCount += 1
+                    print(f"Error creating batch, continuing ({errorCount}).")
+                    print(e)
+
+            if numEvents > 0 and isEvent == False:
+                for event in AllEvents['events']:
+                    if (event['type'] == 'periodic' and event['frequencyCount'] <= 0):
+                        # periodic event triggered
+                        event['frequencyCount'] = event['frequency']
+                        event['durationCount'] = event['duration']
+                        event['isIncreasing'] = random.random() < event['increasechance']
+                        currentEvent = event
+                        isEvent = True
+                        print(event['name'] + " Event Triggered (" + ("UP" if event['isIncreasing'] else "DOWN") + ")")
+                        break
+                    elif (event['type'] == 'random' and random.random() < event['frequency']):
+                        # random event triggered
+                        event['durationCount'] = event['duration']
+                        event['isIncreasing'] = random.random() < event['increasechance']
+                        currentEvent = event
+                        isEvent = True
+                        print(event['name'] + " Event Triggered (" + ("UP" if event['isIncreasing'] else "DOWN") + ")")
+                        break
 
             totalMarketCap = 0
 
@@ -133,12 +171,14 @@ async def run():
                 priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
                 priceIncrease = random.random() < stockVariables.getIncreaseChance()
  
-                if isMarketCorrection:
-                    if currentCorrectionCount <= 0:
-                        isMarketCorrection = False
+                if isEvent:
+                    if currentEvent['durationCount'] <= 0:
+                        isEvent = False
                     else:
-                        priceIncrease = correctionUpward # force direction if in correction
-                        priceIncDec = priceIncDec * MarketCorrectionModifier # make corrections more gradual
+                        priceIncrease = currentEvent['isIncreasing'] # force direction if in correction
+                        priceIncDec = priceIncDec * currentEvent['modifier'] # make corrections more gradual
+                    stockVariables.isInCorrection = False # force individual corrections off if event
+
                 else:
                     if stockVariables.isInCorrection == False and random.random() < stockVariables.correctionChance:
                         stockVariables.isInCorrection = True
@@ -172,40 +212,72 @@ async def run():
                     stockVariables.belowStartingCount += 1
                 
                 record[1] = stockVariables
-                 
-                reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp}
+                
+                if ExtendedStockInfo == 1:
+                    reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp, 
+                               'stockEvent': 1 if stockVariables.isInCorrection == True else 0,
+                               'marketEvent': 1 if isEvent == True else 0 
+                               }
+                else:
+                    reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp}
+
                 s = json.dumps(reading)
                 if stockVariables.isInCorrection:
-                    if count%60==0:
-                        print(s + " (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
+                    print(s + " (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
                 else:
-                    if count%10==0:
-                        print(s + f' (+/-: {stockVariables.aboveStartingCount - stockVariables.belowStartingCount}) ' +
-                            f'(O/U: {stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f}) ' + 
-                            f'(U/D: {stockVariables.moveUpCount/stockVariables.moveDownCount:.2f}) ' +
-                            f'(R: {stockVariables.getPriceRange():.2f}) ' +
-                            f'(IC: {stockVariables.getIncreaseChance():.4f})')
+                    print(s + f' (+/-: {stockVariables.aboveStartingCount - stockVariables.belowStartingCount}) ' +
+                        f'(O/U: {stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f}) ' + 
+                        f'(U/D: {stockVariables.moveUpCount/stockVariables.moveDownCount:.2f}) ' +
+                        f'(R: {stockVariables.getPriceRange():.2f}) ' +
+                        f'(IC: {stockVariables.getIncreaseChance():.4f})')
 
-                event_data_batch.add(EventData(s)) # add event data to the batch
+                try:
+                    event_data_batch.add(EventData(s)) # add event data to the batch
+                except Exception as e:
+                    errorCount += 1
+                    print(f"Error adding to batch, continuing ({errorCount}).")
+                    print(e)
 
                 totalMarketCap = totalMarketCap + newPrice
 
-            # send the batch of events to the event hub
-            await producer.send_batch(event_data_batch)
-
-            if isMarketCorrection:
-                currentCorrectionCount -= 1
+            try:
+                # send the batch of events to the event hub
+                await producer.send_batch(event_data_batch)
+                errorCount = 0
+            except Exception as e:
+                errorCount += 1
+                print(f"Error sending batch, continuing ({errorCount}).")
+                print(e)
+                if (errorCount > 15):
+                    print("Too many errors, bubbling exception.")
+                    raise e
 
             if (totalMarketCap >= totalInitialMarketCap):
                 aboveMarketCount += 1
             else:
                 belowMarketCount += 1
 
-            if count%10==0:
-                print(f'{count} | Total Market Cap: {totalMarketCap:.2f} | Avg: {totalMarketCap/len(dataTable):.2f} | O/U: {aboveMarketCount/belowMarketCount:.2f}')
-            
+            if isEvent:
+                print(f'{count} | Total Cap: {totalMarketCap:.2f} | ' +
+                f'Avg: {totalMarketCap/len(dataTable):.2f} | ' +
+                f'O/U: {aboveMarketCount/belowMarketCount:.2f} | ' + 
+                f'Event: {currentEvent["name"]} ({currentEvent["durationCount"]})')
+               
+            else:
+                print(f'{count} | Total Cap: {totalMarketCap:.2f} | ' +
+                f'Avg: {totalMarketCap/len(dataTable):.2f} | ' +
+                f'O/U: {aboveMarketCount/belowMarketCount:.2f}')
+                    
             count += 1
+
+            if isEvent:
+                currentEvent["durationCount"] -= 1
+            
+            if numEvents > 0:
+                for event in AllEvents['events']:
+                    if (event['type'] == 'periodic'):
+                        event['frequencyCount'] -= 1
                 
             time.sleep(1)
 
-asyncio.run(run())    
+asyncio.run(run())
