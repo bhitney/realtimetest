@@ -94,7 +94,6 @@ dataTable = [
 
 numEvents = 0
 
-
 try:
     AllEvents = json.loads(EventsJson)
     numEvents = len(AllEvents['events'])
@@ -214,8 +213,17 @@ async def run():
                 record[1] = stockVariables
                 
                 if ExtendedStockInfo == 1:
+                    
+                    extendedStockValue = 0 
+                    if stockVariables.isInCorrection:
+                        extendedStockValue = 1 if stockVariables.isCorrectionUpwards else -1
+
+                    extendedMarketValue = 0
+                    if isEvent:
+                        extendedStockValue = 1 if currentEvent['isIncreasing'] else -1
+                
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp, 
-                               'stockEvent': 1 if stockVariables.isInCorrection == True else 0,
+                               'stockEvent': extendedStockValue,
                                'marketEvent': 1 if isEvent == True else 0 
                                }
                 else:

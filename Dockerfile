@@ -28,7 +28,7 @@ ENV IDGD_vars "600|1|1200|1|0.05|0.004|30|0.4|0.600|0.557|0.557|0.557|0.490"
 
 ENV EVENTS '{"events": [{"type": "periodic", "name": "300-up", "frequency":300, "increasechance":1.0, "duration": 5, "modifier": 0.5},{"type": "periodic", "name": "900-down", "frequency":900, "increasechance":0.0, "duration": 10, "modifier": 0.5},{"type": "random", "name": "Rando1", "frequency": 0.003, "increasechance": 0.504, "duration": 30, "modifier": 0.25}]}'
 
-ENV EXTENDEDSTOCKINFO=1
+ENV EXTENDEDSTOCKINFO=0
 
 # Install pip requirements
 COPY requirements.txt .
