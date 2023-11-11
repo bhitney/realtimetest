@@ -23,11 +23,19 @@ TMRW_vars = os.environ['TMRW_vars'].split('|')
 TDY_vars = os.environ['TDY_vars'].split('|')
 IDGD_vars = os.environ['IDGD_vars'].split('|')
 
+# ENV EVENTS '{"events": [{"type": "periodic", "name": "300-up", "frequency":300, "increasechance":1.0, "duration": 5,
+# "modifier": 0.5},{"type": "periodic", "name": "900-down", "frequency":900, "increasechance":0.0, "duration": 10, "modifier": 0.5},
+# {"type": "random", "name": "Rando1", "frequency": 0.003, "increasechance": 0.504, "duration": 30, "modifier": 0.25}]}'
 EventsJson = os.environ['EVENTS']
 
+#'{"timers": [{"name": "Business Hours", "start":"00:00:00", "end":"07:00:00", "modifier":0.99, "appliedTo": "WHO|WHAT|IDK"}, {"name": "Hour of Darkness", "start":"00:00:00", "end":"08:00:00", "modifier":-0.99, "appliedTo": "TMRW"}]}'
+TimersJson = os.environ['TIMERS']
+
+SkipEventHub = True if int(os.environ['SKIPEVENTHUB']) == 1 else False
+
 # Extended stock info is intended to help show correlation on the data on the backend
-# by including events (up or down) in the data feed
-ExtendedStockInfo = int(os.environ['EXTENDEDSTOCKINFO'])
+# by including events (up or down) in the data feed (stockEvent and marketEvent)
+ExtendedStockInfo = True if int(os.environ['EXTENDEDSTOCKINFO']) == 1 else False
 
 # stock variables: 0 start price | 1 min price | 2 max price | 3 mu | 4 sigma | 
 # 5 correction chance | 6 correction length | 7 correction modifier |
@@ -60,13 +68,20 @@ class StockVariables:
     def getPriceRange(self):
         return self.currentPrice / (self.maxPrice - self.minPrice)
     
-    def getIncreaseChance(self):
+    def getIncreaseChance(self, timerModifier = 0.0):
+
         r = self.getPriceRange()
-        if (r >= 0.80): return self.increaseChance_80_100
-        if (r >= 0.60): return self.increaseChance_60_80
-        if (r >= 0.40): return self.increaseChance_40_60
-        if (r >= 0.20): return self.increaseChance_20_40
-        return self.increaseChance_0_20
+        increaseChance = self.increaseChance_0_20
+        if (r >= 0.80): increaseChance = self.increaseChance_80_100
+        elif (r >= 0.60): increaseChance = self.increaseChance_60_80
+        elif (r >= 0.40): increaseChance = self.increaseChance_40_60
+        elif (r >= 0.20): increaseChance = self.increaseChance_20_40
+
+        increaseChance = increaseChance + timerModifier
+        if increaseChance < 0.0: increaseChance = 0.0
+        if increaseChance > 1.0: increaseChance = 1.0
+        
+        return increaseChance
 
 print("EventHub: " + EVENT_HUB_NAME)
 print("EventHubConnString: " + EVENT_HUB_CONNECTION_STR)
@@ -80,6 +95,7 @@ print("TMRW: ", TMRW_vars)
 print("TDY: ", TDY_vars)
 print("IDGD: ", IDGD_vars)
 print("Events JSON: ", EventsJson)
+print("Timers JSON: ", TimersJson)
 
 dataTable = [
      ['WHO', StockVariables(WHO_vars)] 
@@ -93,6 +109,7 @@ dataTable = [
     ]
 
 numEvents = 0
+numTimers = 0
 
 try:
     AllEvents = json.loads(EventsJson)
@@ -107,14 +124,31 @@ if numEvents > 0:
         event['durationCount'] = event['duration']
         if (event['type'] == 'periodic'):
             event['frequencyCount'] = event['frequency']
-        
+        print('Event: ' + event['name'] + ' ' + str(event['type']) + ' ' + str(event['frequency']) + ' ' + str(event['duration']) + ' ' + str(event['increasechance'])) 
+
+try:
+    AllTimers = json.loads(TimersJson)
+    numTimers = len(AllTimers['timers'])
+
+    if numTimers > 0:
+        for timer in AllTimers['timers']:
+            timer['start'] = datetime.datetime.strptime(timer['start'], "%H:%M:%S").time()
+            timer['end'] = datetime.datetime.strptime(timer['end'], "%H:%M:%S").time()
+            print('Timer: ' + timer['name'] + ' ' + str(timer['start']) + ' ' + str(timer['end']) + ' ' + str(timer['appliedTo']))
+
+except Exception as e:
+    numTimers = 0
+    print("Error parsing JSON, continuing without timers.")
+    print(e)
+
+
 totalInitialMarketCap = 0
 for record in dataTable:
     totalInitialMarketCap = totalInitialMarketCap + record[1].startPrice
     
 async def run():
 
-    # Create a producer client to send messages to the event hub.
+    #create a producer client to send messages to the event hub.
     producer = EventHubProducerClient.from_connection_string(
         conn_str=EVENT_HUB_CONNECTION_STR, eventhub_name=EVENT_HUB_NAME
     )
@@ -130,14 +164,15 @@ async def run():
 
         while True:
             
-            timestamp = str(datetime.datetime.utcnow())
+            timestamp = datetime.datetime.utcnow()
 
-            try:
-                event_data_batch = await producer.create_batch() # create a batch
-            except Exception as e:
-                    errorCount += 1
-                    print(f"Error creating batch, continuing ({errorCount}).")
-                    print(e)
+            if not SkipEventHub:
+                try:
+                    event_data_batch = await producer.create_batch() # create a batch
+                except Exception as e:
+                        errorCount += 1
+                        print(f"Error creating batch, continuing ({errorCount}).")
+                        print(e)
 
             if numEvents > 0 and isEvent == False:
                 for event in AllEvents['events']:
@@ -167,8 +202,19 @@ async def run():
                 stockVariables = record[1]
                 price = stockVariables.currentPrice
 
+                # apply timers
+                currentTimerModifier = 0.0
+                isTimer = False
+                if numTimers > 0:
+                    for timer in AllTimers['timers']:
+                        if (timer['start'] <= timestamp.time() <= timer['end'] 
+                                and symbol in timer['appliedTo'].split('|')):
+                            currentTimerModifier = timer['modifier']
+                            isTimer = True
+                            #print(symbol + " Timer (" + timer['name'] + ")")
+
                 priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
-                priceIncrease = random.random() < stockVariables.getIncreaseChance()
+                priceIncrease = random.random() < stockVariables.getIncreaseChance(currentTimerModifier)
  
                 if isEvent:
                     if currentEvent['durationCount'] <= 0:
@@ -182,7 +228,7 @@ async def run():
                     if stockVariables.isInCorrection == False and random.random() < stockVariables.correctionChance:
                         stockVariables.isInCorrection = True
                         stockVariables.correctionCounter = stockVariables.correctionLength
-                        stockVariables.isCorrectionUpwards = random.random() < stockVariables.getIncreaseChance()
+                        stockVariables.isCorrectionUpwards = random.random() < stockVariables.getIncreaseChance(currentTimerModifier)
                         print(symbol + " Correction (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
 
                 if stockVariables.isInCorrection:
@@ -212,53 +258,58 @@ async def run():
                 
                 record[1] = stockVariables
                 
-                if ExtendedStockInfo == 1:
-                    
-                    extendedStockValue = 0 
-                    if stockVariables.isInCorrection:
-                        extendedStockValue = 1 if stockVariables.isCorrectionUpwards else -1
+                extendedStockValue = 0 
+                if stockVariables.isInCorrection:
+                    extendedStockValue = 1 if stockVariables.isCorrectionUpwards else -1
 
-                    extendedMarketValue = 0
-                    if isEvent:
-                        extendedStockValue = 1 if currentEvent['isIncreasing'] else -1
-                
-                    reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp, 
+                extendedMarketValue = 0
+                if isEvent:
+                    extendedMarketValue = 1 if currentEvent['isIncreasing'] else -1
+
+                if ExtendedStockInfo:
+                    reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp), 
                                'stockEvent': extendedStockValue,
-                               'marketEvent': 1 if isEvent == True else 0 
+                               'marketEvent': extendedMarketValue,
+                               'timer': 1 if isTimer else 0
                                }
                 else:
-                    reading = {'symbol': symbol, 'price': newPrice, 'timestamp': timestamp}
+                    reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp)}
 
                 s = json.dumps(reading)
-                if stockVariables.isInCorrection:
-                    print(s + " (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
-                else:
-                    print(s + f' (+/-: {stockVariables.aboveStartingCount - stockVariables.belowStartingCount}) ' +
-                        f'(O/U: {stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f}) ' + 
-                        f'(U/D: {stockVariables.moveUpCount/stockVariables.moveDownCount:.2f}) ' +
-                        f'(R: {stockVariables.getPriceRange():.2f}) ' +
-                        f'(IC: {stockVariables.getIncreaseChance():.4f})')
+                # if stockVariables.isInCorrection:
+                #     print(s + " (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
+                # else:
+                print(s + 
+                    f' O/U:{stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f} ' + 
+                    f'| U/D:{stockVariables.moveUpCount/stockVariables.moveDownCount:.2f} ' +
+                    f'| R:{stockVariables.getPriceRange():.2f} ' +
+                    f'| IC:{stockVariables.getIncreaseChance(currentTimerModifier):.4f} ' + 
+                    f'| T:{1 if isTimer else 0} ' +
+                    f'| M:{extendedMarketValue} ' +
+                    f'| S:{extendedStockValue}')
 
-                try:
-                    event_data_batch.add(EventData(s)) # add event data to the batch
-                except Exception as e:
-                    errorCount += 1
-                    print(f"Error adding to batch, continuing ({errorCount}).")
-                    print(e)
+                if not SkipEventHub:
+                    try:
+                        event_data_batch.add(EventData(s)) # add event data to the batch
+                    except Exception as e:
+                        errorCount += 1
+                        print(f"Error adding to batch, continuing ({errorCount}).")
+                        print(e)
 
                 totalMarketCap = totalMarketCap + newPrice
 
-            try:
-                # send the batch of events to the event hub
-                await producer.send_batch(event_data_batch)
-                errorCount = 0
-            except Exception as e:
-                errorCount += 1
-                print(f"Error sending batch, continuing ({errorCount}).")
-                print(e)
-                if (errorCount > 15):
-                    print("Too many errors, bubbling exception.")
-                    raise e
+            if not SkipEventHub:
+                try:
+                    # send the batch of events to the event hub
+                    await producer.send_batch(event_data_batch)
+                    errorCount = 0
+                except Exception as e:
+                    errorCount += 1
+                    print(f"Error sending batch, continuing ({errorCount}).")
+                    print(e)
+                    if (errorCount > 15):
+                        print("Too many errors, bubbling exception.")
+                        raise e
 
             if (totalMarketCap >= totalInitialMarketCap):
                 aboveMarketCount += 1
