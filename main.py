@@ -10,9 +10,12 @@ print("Starting...")
 
 from azure.eventhub import EventData
 from azure.eventhub.aio import EventHubProducerClient
+from enum import Enum
 
 EVENT_HUB_CONNECTION_STR = os.environ['EVENTHUBCONNECTIONSTRING']
 EVENT_HUB_NAME = os.environ['EVENTHUBNAME']
+PRINT_ONLY_ERRORS = True if int(os.environ['PRINTONLYERRORS']) == 1 else False
+MAX_ERROR_COUNT = 15
 
 WHO_vars = os.environ['WHO_vars'].split('|')
 WHAT_vars = os.environ['WHAT_vars'].split('|')
@@ -111,6 +114,14 @@ dataTable = [
 numEvents = 0
 numTimers = 0
 
+class MessageType(Enum):
+    INFO = 1
+    ERROR = 2
+
+def printMsg(message, messageType = MessageType.INFO):
+    if (PRINT_ONLY_ERRORS == False) or (PRINT_ONLY_ERRORS and messageType == MessageType.ERROR):
+        print(message)
+
 try:
     AllEvents = json.loads(EventsJson)
     numEvents = len(AllEvents['events'])
@@ -134,12 +145,13 @@ try:
         for timer in AllTimers['timers']:
             timer['start'] = datetime.datetime.strptime(timer['start'], "%H:%M:%S").time()
             timer['end'] = datetime.datetime.strptime(timer['end'], "%H:%M:%S").time()
-            print('Timer: ' + timer['name'] + ' ' + str(timer['start']) + ' ' + str(timer['end']) + ' ' + str(timer['appliedTo']))
-
+            print('Timer: ' + timer['name'] + ' ' + str(timer['start']) + ' ' + str(timer['end']) + 
+                ' ' + str(timer['days']) + ' ' + str(timer['months']) + ' ' +
+                 str(timer['appliedTo']) + ' ' + str(timer['modifier']))
+            
 except Exception as e:
     numTimers = 0
-    print("Error parsing JSON, continuing without timers.")
-    print(e)
+    print(f"{datetime.datetime.utcnow()} Error parsing JSON, continuing without timers. {e}")
 
 
 totalInitialMarketCap = 0
@@ -165,14 +177,14 @@ async def run():
         while True:
             
             timestamp = datetime.datetime.utcnow()
+            event_data_batch = None
 
             if not SkipEventHub:
                 try:
                     event_data_batch = await producer.create_batch() # create a batch
                 except Exception as e:
                         errorCount += 1
-                        print(f"Error creating batch, continuing ({errorCount}).")
-                        print(e)
+                        printMsg(f"{datetime.datetime.utcnow()} Error creating batch ({errorCount}) - {e}", MessageType.ERROR)
 
             if numEvents > 0 and isEvent == False:
                 for event in AllEvents['events']:
@@ -183,7 +195,7 @@ async def run():
                         event['isIncreasing'] = random.random() < event['increasechance']
                         currentEvent = event
                         isEvent = True
-                        print(event['name'] + " Event Triggered (" + ("UP" if event['isIncreasing'] else "DOWN") + ")")
+                        printMsg(f'{event["name"]} Event Triggered ({"UP" if event["isIncreasing"] else "DOWN"})')
                         break
                     elif (event['type'] == 'random' and random.random() < event['frequency']):
                         # random event triggered
@@ -191,7 +203,7 @@ async def run():
                         event['isIncreasing'] = random.random() < event['increasechance']
                         currentEvent = event
                         isEvent = True
-                        print(event['name'] + " Event Triggered (" + ("UP" if event['isIncreasing'] else "DOWN") + ")")
+                        printMsg(f'{event["name"]} Event Triggered ({"UP" if event["isIncreasing"] else "DOWN"})')
                         break
 
             totalMarketCap = 0
@@ -203,17 +215,21 @@ async def run():
                 price = stockVariables.currentPrice
 
                 # apply timers
+                # modifier is cumulative across all timers
                 currentTimerModifier = 0.0
                 isTimer = False
                 if numTimers > 0:
                     for timer in AllTimers['timers']:
                         if (timer['start'] <= timestamp.time() <= timer['end'] 
-                                and symbol in timer['appliedTo'].split('|')):
-                            currentTimerModifier = timer['modifier']
+                                and symbol in timer['appliedTo'].split('|')
+                                and str(timestamp.weekday()) in timer['days'].split('|')
+                                and str(timestamp.month) in timer['months'].split('|')):
+                            currentTimerModifier += timer['modifier']
                             isTimer = True
-                            #print(symbol + " Timer (" + timer['name'] + ")")
 
-                priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
+                # priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
+                priceIncDec = abs(round(random.normalvariate(stockVariables.mu, stockVariables.sigma),2))
+
                 priceIncrease = random.random() < stockVariables.getIncreaseChance(currentTimerModifier)
  
                 if isEvent:
@@ -229,7 +245,7 @@ async def run():
                         stockVariables.isInCorrection = True
                         stockVariables.correctionCounter = stockVariables.correctionLength
                         stockVariables.isCorrectionUpwards = random.random() < stockVariables.getIncreaseChance(currentTimerModifier)
-                        print(symbol + " Correction (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
+                        printMsg(f'{symbol} Correction ({"UP" if stockVariables.isCorrectionUpwards else "DOWN"})')
 
                 if stockVariables.isInCorrection:
                     if stockVariables.correctionCounter <= 0:
@@ -270,31 +286,31 @@ async def run():
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp), 
                                'stockEvent': extendedStockValue,
                                'marketEvent': extendedMarketValue,
-                               'timer': 1 if isTimer else 0
+                               'timer': 1 if isTimer else 0,
+                               'gendatetime': str(datetime.datetime.utcnow()),
+                               'errorcount': errorCount
                                }
                 else:
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp)}
 
                 s = json.dumps(reading)
-                # if stockVariables.isInCorrection:
-                #     print(s + " (" + ("UP" if stockVariables.isCorrectionUpwards else "DOWN") + ")")
-                # else:
-                print(s + 
-                    f' O/U:{stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f} ' + 
-                    f'| U/D:{stockVariables.moveUpCount/stockVariables.moveDownCount:.2f} ' +
-                    f'| R:{stockVariables.getPriceRange():.2f} ' +
-                    f'| IC:{stockVariables.getIncreaseChance(currentTimerModifier):.4f} ' + 
-                    f'| T:{1 if isTimer else 0} ' +
-                    f'| M:{extendedMarketValue} ' +
-                    f'| S:{extendedStockValue}')
+
+                printMsg(s + 
+                        f' O/U:{stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f} ' + 
+                        f'| U/D:{stockVariables.moveUpCount/stockVariables.moveDownCount:.2f} ' +
+                        f'| R:{stockVariables.getPriceRange():.2f} ' +
+                        f'| IC:{stockVariables.getIncreaseChance(currentTimerModifier):.4f} ' + 
+                        f'| T:{1 if isTimer else 0} ' +
+                        f'| M:{extendedMarketValue} ' +
+                        f'| S:{extendedStockValue}')
 
                 if not SkipEventHub:
                     try:
-                        event_data_batch.add(EventData(s)) # add event data to the batch
+                        if not event_data_batch is None: 
+                            event_data_batch.add(EventData(s)) # add event data to the batch
                     except Exception as e:
                         errorCount += 1
-                        print(f"Error adding to batch, continuing ({errorCount}).")
-                        print(e)
+                        printMsg(f"{datetime.datetime.utcnow()} Error adding to batch ({errorCount}) - {e}", MessageType.ERROR)
 
                 totalMarketCap = totalMarketCap + newPrice
 
@@ -305,28 +321,28 @@ async def run():
                     errorCount = 0
                 except Exception as e:
                     errorCount += 1
-                    print(f"Error sending batch, continuing ({errorCount}).")
-                    print(e)
-                    if (errorCount > 15):
-                        print("Too many errors, bubbling exception.")
+                    printMsg(f"{datetime.datetime.utcnow()} Error sending batch ({errorCount}) - {e}", MessageType.ERROR)
+                    if (errorCount > MAX_ERROR_COUNT):
+                        printMsg(f"{datetime.datetime.utcnow()} Too many errors, raising exception", MessageType.ERROR)
                         raise e
 
             if (totalMarketCap >= totalInitialMarketCap):
                 aboveMarketCount += 1
             else:
                 belowMarketCount += 1
-
+         
             if isEvent:
-                print(f'{count} | Total Cap: {totalMarketCap:.2f} | ' +
+                printMsg(f'{count} | Total Cap: {totalMarketCap:.2f} | ' +
                 f'Avg: {totalMarketCap/len(dataTable):.2f} | ' +
                 f'O/U: {aboveMarketCount/belowMarketCount:.2f} | ' + 
                 f'Event: {currentEvent["name"]} ({currentEvent["durationCount"]})')
-               
+            
             else:
-                print(f'{count} | Total Cap: {totalMarketCap:.2f} | ' +
+                printMsg(f'{count} | Total Cap: {totalMarketCap:.2f} | ' +
                 f'Avg: {totalMarketCap/len(dataTable):.2f} | ' +
                 f'O/U: {aboveMarketCount/belowMarketCount:.2f}')
                     
+            # update counters 
             count += 1
 
             if isEvent:
