@@ -217,7 +217,8 @@ async def run():
                 # apply timers
                 # modifier is cumulative across all timers
                 currentTimerModifier = 0.0
-                isTimer = False
+                numTimers = 0
+                # isTimer = False
                 if numTimers > 0:
                     for timer in AllTimers['timers']:
                         if (timer['start'] <= timestamp.time() <= timer['end'] 
@@ -225,7 +226,8 @@ async def run():
                                 and str(timestamp.weekday()) in timer['days'].split('|')
                                 and str(timestamp.month) in timer['months'].split('|')):
                             currentTimerModifier += timer['modifier']
-                            isTimer = True
+                            numTimers += 1
+                            # isTimer = True
 
                 # priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
                 priceIncDec = abs(round(random.normalvariate(stockVariables.mu, stockVariables.sigma),2))
@@ -286,9 +288,7 @@ async def run():
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp), 
                                'stockEvent': extendedStockValue,
                                'marketEvent': extendedMarketValue,
-                               'timer': 1 if isTimer else 0,
-                               'gendatetime': str(datetime.datetime.utcnow()),
-                               'errorcount': errorCount
+                               'timer': numTimers #1 if isTimer else 0
                                }
                 else:
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp)}
@@ -300,7 +300,7 @@ async def run():
                         f'| U/D:{stockVariables.moveUpCount/stockVariables.moveDownCount:.2f} ' +
                         f'| R:{stockVariables.getPriceRange():.2f} ' +
                         f'| IC:{stockVariables.getIncreaseChance(currentTimerModifier):.4f} ' + 
-                        f'| T:{1 if isTimer else 0} ' +
+                        f'| T:{numTimers} ' + #{1 if isTimer else 0} ' +
                         f'| M:{extendedMarketValue} ' +
                         f'| S:{extendedStockValue}')
 
