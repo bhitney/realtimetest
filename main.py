@@ -6,7 +6,7 @@ import asyncio
 import math
 import os
 
-print("Starting...")
+print("Starting Real-time stock generator 2023-11-26...")
 
 from azure.eventhub import EventData
 from azure.eventhub.aio import EventHubProducerClient
@@ -16,6 +16,7 @@ EVENT_HUB_CONNECTION_STR = os.environ['EVENTHUBCONNECTIONSTRING']
 EVENT_HUB_NAME = os.environ['EVENTHUBNAME']
 PRINT_ONLY_ERRORS = True if int(os.environ['PRINTONLYERRORS']) == 1 else False
 MAX_ERROR_COUNT = 15
+USE_GROWTH_RATE =  True if int(os.environ['USEGROWTHRATE']) == 1 else False
 
 WHO_vars = os.environ['WHO_vars'].split('|')
 WHAT_vars = os.environ['WHAT_vars'].split('|')
@@ -44,6 +45,9 @@ ExtendedStockInfo = True if int(os.environ['EXTENDEDSTOCKINFO']) == 1 else False
 # 5 correction chance | 6 correction length | 7 correction modifier |
 # 8 0-20 increase chance | 9 20-40 increase chance | 10 40-60 | 11 60-80 | 12 80-100
 
+growthInceptionDate = datetime.datetime.strptime("2023-01-01 00:00:00", '%Y-%m-%d %H:%M:%S')
+timestamp = datetime.datetime.utcnow()
+
 class StockVariables:
     def __init__(self, stockVariables) -> None:
         self.startPrice = float(stockVariables[0])
@@ -67,9 +71,28 @@ class StockVariables:
         self.increaseChance_40_60 = float(stockVariables[10])
         self.increaseChance_60_80 = float(stockVariables[11])
         self.increaseChance_80_100 = float(stockVariables[12])
-
+        self.growthRateAnnual = float(stockVariables[13])
+        self.growthRateDaily = self.growthRateAnnual / 365
+    
+    def getMaxPrice(self):
+        if USE_GROWTH_RATE and self.growthRateAnnual != 0:
+            # get days since inception
+            daysSinceInception = (timestamp - growthInceptionDate).days
+            # calculate growth rate
+            growthRateModifier = math.pow(1 + self.growthRateDaily, daysSinceInception)
+            # apply growth rate
+            newMaxPrice = self.maxPrice * growthRateModifier
+            # make sure new max price is greater than min price
+            if newMaxPrice < (self.minPrice + 1):
+                self.growthRateDaily = abs(self.growthRateDaily)
+                newMaxPrice = self.minPrice + 1
+                
+            return newMaxPrice
+        else:
+            return self.maxPrice
+    
     def getPriceRange(self):
-        return self.currentPrice / (self.maxPrice - self.minPrice)
+        return self.currentPrice / (self.getMaxPrice() - self.minPrice)
     
     def getIncreaseChance(self, timerModifier = 0.0):
 
@@ -99,6 +122,7 @@ print("TDY: ", TDY_vars)
 print("IDGD: ", IDGD_vars)
 print("Events JSON: ", EventsJson)
 print("Timers JSON: ", TimersJson)
+print("Growth rate: ", USE_GROWTH_RATE)
 
 dataTable = [
      ['WHO', StockVariables(WHO_vars)] 
@@ -217,7 +241,7 @@ async def run():
                 # apply timers
                 # modifier is cumulative across all timers
                 currentTimerModifier = 0.0
-                numTimers = 0
+                appliedTimers = 0
                 # isTimer = False
                 if numTimers > 0:
                     for timer in AllTimers['timers']:
@@ -226,7 +250,7 @@ async def run():
                                 and str(timestamp.weekday()) in timer['days'].split('|')
                                 and str(timestamp.month) in timer['months'].split('|')):
                             currentTimerModifier += timer['modifier']
-                            numTimers += 1
+                            appliedTimers += 1
                             # isTimer = True
 
                 # priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
@@ -259,7 +283,8 @@ async def run():
 
                 if priceIncrease:
                     newPrice = round(price + priceIncDec,2)
-                    newPrice = (newPrice if newPrice < stockVariables.maxPrice else stockVariables.maxPrice)
+                    # newPrice = (newPrice if newPrice < stockVariables.maxPrice else stockVariables.maxPrice)
+                    newPrice = round(newPrice if newPrice < stockVariables.getMaxPrice() else stockVariables.getMaxPrice(),2)
                     stockVariables.moveUpCount += 1
                     #increase
                 else:
@@ -288,7 +313,7 @@ async def run():
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp), 
                                'stockEvent': extendedStockValue,
                                'marketEvent': extendedMarketValue,
-                               'timer': numTimers #1 if isTimer else 0
+                               'timer': appliedTimers #1 if isTimer else 0
                                }
                 else:
                     reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp)}
@@ -300,7 +325,7 @@ async def run():
                         f'| U/D:{stockVariables.moveUpCount/stockVariables.moveDownCount:.2f} ' +
                         f'| R:{stockVariables.getPriceRange():.2f} ' +
                         f'| IC:{stockVariables.getIncreaseChance(currentTimerModifier):.4f} ' + 
-                        f'| T:{numTimers} ' + #{1 if isTimer else 0} ' +
+                        f'| T:{appliedTimers} ' + #{1 if isTimer else 0} ' +
                         f'| M:{extendedMarketValue} ' +
                         f'| S:{extendedStockValue}')
 
