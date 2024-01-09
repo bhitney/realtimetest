@@ -1,3 +1,4 @@
 # To ensure app dependencies are ported from your virtual environment/host machine into your container, run 'pip freeze > requirements.txt' in the terminal to overwrite this file
 azure-core<=1.28.0
 azure-eventhub<=5.11.3
+azure-identity<=1.15.0
