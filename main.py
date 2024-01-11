@@ -6,7 +6,7 @@ import asyncio
 import math
 import os
 
-print("Starting Real-time stock generator v2023-12-31-c...")
+print("Starting real-time stock generator v2024-01-09 v4")
 
 from azure.eventhub import EventData
 from azure.eventhub import EventHubProducerClient
@@ -45,6 +45,9 @@ EventsJson = os.environ['EVENTS']
 TimersJson = os.environ['TIMERS']
 
 SkipEventHub = True if int(os.environ['SKIPEVENTHUB']) == 1 else False
+
+if SkipEventHub:
+    print("Skipping Event Hub - events will not be sent to Event Hub")
 
 # Extended stock info is intended to help show correlation on the data on the backend
 # by including events (up or down) in the data feed (stockEvent and marketEvent)
