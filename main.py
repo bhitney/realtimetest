@@ -68,28 +68,29 @@ timestamp = datetime.datetime.utcnow()
 
 class StockVariables:
     def __init__(self, stockVariables) -> None:
-        self.startPrice = float(stockVariables[0])
-        self.minPrice = float(stockVariables[1])
-        self.maxPrice = float(stockVariables[2])
-        self.currentPrice = float(stockVariables[0])
-        self.mu = float(stockVariables[3])
-        self.sigma = float(stockVariables[4])
-        self.correctionChance = float(stockVariables[5])
-        self.correctionLength = int(stockVariables[6])
+        self.name = stock["name"]
+        self.startPrice = float(stock["startprice"])
+        self.minPrice = float(stock["minprice"])
+        self.maxPrice = float(stock["maxprice"])
+        self.currentPrice = float(stock["startprice"])
+        self.mu = float(stock["mu"])
+        self.sigma = float(stock["sigma"])
+        self.correctionChance = float(stock["correctionchance"])
+        self.correctionLength = int(stock["correctionlength"])
         self.correctionCounter = 0
-        self.correctionModifier = float(stockVariables[7])
+        self.correctionModifier = float(stock["correctionmodifier"])
         self.isInCorrection = False
         self.isCorrectionUpwards = True
         self.aboveStartingCount = 1
         self.belowStartingCount = 1
         self.moveUpCount = 1
         self.moveDownCount = 1
-        self.increaseChance_0_20 = float(stockVariables[8])
-        self.increaseChance_20_40 = float(stockVariables[9])
-        self.increaseChance_40_60 = float(stockVariables[10])
-        self.increaseChance_60_80 = float(stockVariables[11])
-        self.increaseChance_80_100 = float(stockVariables[12])
-        self.growthRateAnnual = float(stockVariables[13])
+        self.increaseChance_0_20 = float(stock["increasechance0-20"])
+        self.increaseChance_20_40 = float(stock["increasechance20-40"])
+        self.increaseChance_40_60 = float(stock["increasechance40-60"])
+        self.increaseChance_60_80 = float(stock["increasechance60-80"])
+        self.increaseChance_80_100 = float(stock["increasechance80-100"])
+        self.growthRateAnnual = float(stock["annualgrowthrate"])
         self.growthRateDaily = self.growthRateAnnual / 365
     
     def getMaxPrice(self):
@@ -149,16 +150,17 @@ print("Timers JSON: ", TimersJson)
 print("Growth rate: ", USE_GROWTH_RATE)
 print("Warm up hours: ", WARM_UP_HOURS)
 
-dataTable = [
-     ['WHO', StockVariables(WHO_vars)] 
-    ,['WHAT', StockVariables(WHAT_vars)] 
-    ,['IDK', StockVariables(IDK_vars)] 
-    ,['WHY', StockVariables(WHY_vars)] 
-    ,['BCUZ', StockVariables(BCUZ_vars)] 
-    ,['TMRW', StockVariables(TMRW_vars)] 
-    ,['TDY', StockVariables(TDY_vars)] 
-    ,['IDGD', StockVariables(IDGD_vars)] 
-    ]
+dataTable = []
+# dataTable = [
+#      ['WHO', StockVariables(WHO_vars)] 
+#     ,['WHAT', StockVariables(WHAT_vars)] 
+#     ,['IDK', StockVariables(IDK_vars)] 
+#     ,['WHY', StockVariables(WHY_vars)] 
+#     ,['BCUZ', StockVariables(BCUZ_vars)] 
+#     ,['TMRW', StockVariables(TMRW_vars)] 
+#     ,['TDY', StockVariables(TDY_vars)] 
+#     ,['IDGD', StockVariables(IDGD_vars)] 
+#     ]
 
 numEvents = 0
 numTimers = 0
@@ -178,11 +180,12 @@ try:
 
     if numStocks > 0:
         for stock in AllStocks['stocks']:
-            print(f'Stock: {stock["name"]} {str(stock["startPrice"])} {str(stock["minPrice"])} {str(stock["maxPrice"])}' \
-                f'{str(stock["mu"])} {str(stock["sigma"])} {str(stock["correctionChance"])} {str(stock["correctionLength"])}' \
-                f'{str(stock["correctionModifier"])} {str(stock["increaseChance_0_20"])} {str(stock["increaseChance_20_40"])}' \
-                f'{str(stock["increaseChance_40_60"])} {str(stock["increaseChance_60_80"])} {str(stock["increaseChance_80_100"])}' \
-                f'{str(stock["growthRateAnnual"])}')
+            dataTable.append(StockVariables(stock))
+            print(f'Stock: {stock["name"]} {str(stock["startprice"])} {str(stock["minprice"])} {str(stock["maxprice"])} ' \
+                f'{str(stock["mu"])} {str(stock["sigma"])} {str(stock["correctionchance"])} {str(stock["correctionlength"])} ' \
+                f'{str(stock["correctionmodifier"])} {str(stock["increasechance0-20"])} {str(stock["increasechance20-40"])} ' \
+                f'{str(stock["increasechance40-60"])} {str(stock["increasechance60-80"])} {str(stock["increasechance80-100"])} ' \
+                f'{str(stock["annualgrowthrate"])}')
         
 except Exception as e:
     numStocks = 0
@@ -227,7 +230,7 @@ except Exception as e:
 
 totalInitialMarketCap = 0
 for record in dataTable:
-    totalInitialMarketCap = totalInitialMarketCap + record[1].startPrice
+    totalInitialMarketCap = totalInitialMarketCap + record.startPrice
     
 # async def run():
 # def run():
@@ -307,9 +310,12 @@ while True:
 
     for record in dataTable:
 
-        symbol = record[0]
-        stockVariables = record[1]
-        price = stockVariables.currentPrice
+        # symbol = record.name
+        # stockVariables = record
+        # price = stockVariables.currentPrice
+        # symbol = record[0]
+        # stockVariables = record[1]
+        # price = stockVariables.currentPrice
 
         # apply timers
         # modifier is cumulative across all timers
@@ -318,7 +324,7 @@ while True:
         if numTimers > 0:
             for timer in AllTimers['timers']:
                 if (timer['start'] <= timestamp.time() <= timer['end'] 
-                        and (timer['appliedTo'] == 'all' or symbol in timer['appliedTo'].split('|'))
+                        and (timer['appliedTo'] == 'all' or record.name in timer['appliedTo'].split('|'))
                         and str(timestamp.weekday()) in timer['days'].split('|')
                         and str(timestamp.month) in timer['months'].split('|')
                         and (timer['dayofmonth'] == 'all' or str(timestamp.day) in timer['dayofmonth'].split('|'))
@@ -326,10 +332,10 @@ while True:
                     currentTimerModifier += timer['modifier']
                     appliedTimers += 1
 
-        # priceIncDec = abs(price - (random.normalvariate(stockVariables.mu, stockVariables.sigma) * price))
-        priceIncDec = abs(round(random.normalvariate(stockVariables.mu, stockVariables.sigma),2))
+        # priceIncDec = abs(record.currentPrice - (random.normalvariate(record.mu, record.sigma) * record.currentPrice))
+        priceIncDec = abs(round(random.normalvariate(record.mu, record.sigma),2))
 
-        priceIncrease = random.random() < stockVariables.getIncreaseChance(currentTimerModifier)
+        priceIncrease = random.random() < record.getIncreaseChance(currentTimerModifier)
 
         if isEvent:
             if currentEvent['durationCount'] <= 0:
@@ -337,67 +343,67 @@ while True:
             else:
                 priceIncrease = currentEvent['isIncreasing'] # force direction if in correction
                 priceIncDec = priceIncDec * currentEvent['modifier'] # make corrections more gradual
-            stockVariables.isInCorrection = False # force individual corrections off if event
+            record.isInCorrection = False # force individual corrections off if event
 
         else:
-            if stockVariables.isInCorrection == False and random.random() < stockVariables.correctionChance:
-                stockVariables.isInCorrection = True
-                stockVariables.correctionCounter = stockVariables.correctionLength
-                stockVariables.isCorrectionUpwards = random.random() < stockVariables.getIncreaseChance(currentTimerModifier)
-                printMsg(f'{symbol} Correction ({"UP" if stockVariables.isCorrectionUpwards else "DOWN"})')
+            if record.isInCorrection == False and random.random() < record.correctionChance:
+                record.isInCorrection = True
+                record.correctionCounter = record.correctionLength
+                record.isCorrectionUpwards = random.random() < record.getIncreaseChance(currentTimerModifier)
+                printMsg(f'{record.name} Correction ({"UP" if record.isCorrectionUpwards else "DOWN"})')
 
-        if stockVariables.isInCorrection:
-            if stockVariables.correctionCounter <= 0:
-                stockVariables.isInCorrection = False
+        if record.isInCorrection:
+            if record.correctionCounter <= 0:
+                record.isInCorrection = False
             else:
-                priceIncrease = stockVariables.isCorrectionUpwards # force direction if in correction
-                priceIncDec = priceIncDec * stockVariables.correctionModifier # make corrections more gradual
-                stockVariables.correctionCounter -= 1
+                priceIncrease = record.isCorrectionUpwards # force direction if in correction
+                priceIncDec = priceIncDec * record.correctionModifier # make corrections more gradual
+                record.correctionCounter -= 1
 
         if priceIncrease:
-            newPrice = round(price + priceIncDec,2)
-            # newPrice = (newPrice if newPrice < stockVariables.maxPrice else stockVariables.maxPrice)
-            newPrice = round(newPrice if newPrice < stockVariables.getMaxPrice() else stockVariables.getMaxPrice(),2)
-            stockVariables.moveUpCount += 1
+            newPrice = round(record.currentPrice + priceIncDec,2)
+            # newPrice = (newPrice if newPrice < record.maxPrice else record.maxPrice)
+            newPrice = round(newPrice if newPrice < record.getMaxPrice() else record.getMaxPrice(),2)
+            record.moveUpCount += 1
             #increase
         else:
-            newPrice = round(price - priceIncDec,2)
-            newPrice = (newPrice if newPrice > stockVariables.minPrice else stockVariables.minPrice)
-            stockVariables.moveDownCount += 1
+            newPrice = round(record.currentPrice - priceIncDec,2)
+            newPrice = (newPrice if newPrice > record.minPrice else record.minPrice)
+            record.moveDownCount += 1
             #decrease
 
-        stockVariables.currentPrice = newPrice
-        if (stockVariables.currentPrice > stockVariables.startPrice):
-            stockVariables.aboveStartingCount += 1
+        record.currentPrice = newPrice
+        if (record.currentPrice > record.startPrice):
+            record.aboveStartingCount += 1
         else:
-            stockVariables.belowStartingCount += 1
+            record.belowStartingCount += 1
         
-        record[1] = stockVariables
+        # record[1] = record
         
         extendedStockValue = 0 
-        if stockVariables.isInCorrection:
-            extendedStockValue = 1 if stockVariables.isCorrectionUpwards else -1
+        if record.isInCorrection:
+            extendedStockValue = 1 if record.isCorrectionUpwards else -1
 
         extendedMarketValue = 0
         if isEvent:
             extendedMarketValue = 1 if currentEvent['isIncreasing'] else -1
 
         if EXTENDED_STOCK_INFO:
-            reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp), 
+            reading = {'symbol': record.name, 'price': newPrice, 'timestamp': str(timestamp), 
                         'stockEvent': extendedStockValue,
                         'marketEvent': extendedMarketValue,
                         'timer': appliedTimers #1 if isTimer else 0
                         }
         else:
-            reading = {'symbol': symbol, 'price': newPrice, 'timestamp': str(timestamp)}
+            reading = {'symbol': record.name, 'price': newPrice, 'timestamp': str(timestamp)}
 
         s = json.dumps(reading)
 
         printMsg(s + 
-                f' O/U:{stockVariables.aboveStartingCount/stockVariables.belowStartingCount:.2f} ' + 
-                f'| U/D:{stockVariables.moveUpCount/stockVariables.moveDownCount:.2f} ' +
-                f'| R:{stockVariables.getPriceRange():.2f} ' +
-                f'| IC:{stockVariables.getIncreaseChance(currentTimerModifier):.4f} ' + 
+                f' O/U:{record.aboveStartingCount/record.belowStartingCount:.2f} ' + 
+                f'| U/D:{record.moveUpCount/record.moveDownCount:.2f} ' +
+                f'| R:{record.getPriceRange():.2f} ' +
+                f'| IC:{record.getIncreaseChance(currentTimerModifier):.4f} ' + 
                 f'| T:{appliedTimers} ' +
                 f'| M:{extendedMarketValue} ' +
                 f'| S:{extendedStockValue}')
@@ -454,6 +460,5 @@ while True:
     if not isWarmup:
         time.sleep(1)
         
-
 # asyncio.run(run())
 # run()
