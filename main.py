@@ -30,14 +30,14 @@ WARM_UP_HOURS = int(os.environ['WARMUPHOURS'])
 isWarmup = True if WARM_UP_HOURS > 0 else False
 
 # Stock variables
-WHO_vars = os.environ['WHO_vars'].split('|')
-WHAT_vars = os.environ['WHAT_vars'].split('|')
-IDK_vars = os.environ['IDK_vars'].split('|')
-WHY_vars = os.environ['WHY_vars'].split('|')
-BCUZ_vars = os.environ['BCUZ_vars'].split('|')
-TMRW_vars = os.environ['TMRW_vars'].split('|')
-TDY_vars = os.environ['TDY_vars'].split('|')
-IDGD_vars = os.environ['IDGD_vars'].split('|')
+# WHO_vars = os.environ['WHO_vars'].split('|')
+# WHAT_vars = os.environ['WHAT_vars'].split('|')
+# IDK_vars = os.environ['IDK_vars'].split('|')
+# WHY_vars = os.environ['WHY_vars'].split('|')
+# BCUZ_vars = os.environ['BCUZ_vars'].split('|')
+# TMRW_vars = os.environ['TMRW_vars'].split('|')
+# TDY_vars = os.environ['TDY_vars'].split('|')
+# IDGD_vars = os.environ['IDGD_vars'].split('|')
 
 StocksJson = os.environ['STOCKS']
 
