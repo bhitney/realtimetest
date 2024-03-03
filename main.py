@@ -160,6 +160,7 @@ dataTable = []
 
 numEvents = 0
 numTimers = 0
+numStocks = 0
 
 class MessageType(Enum):
     INFO = 1
