@@ -6,7 +6,7 @@ import asyncio
 import math
 import os
 
-print("Starting real-time stock generator v2024-01-11 v6")
+print("Starting real-time stock generator - 2024-03-02 v6")
 
 from azure.eventhub import EventData
 from azure.eventhub import EventHubProducerClient
@@ -57,10 +57,6 @@ if SKIP_EVENT_HUB:
 # Extended stock info is intended to help show correlation on the data on the backend
 # by including events (up or down) in the data feed (stockEvent and marketEvent)
 EXTENDED_STOCK_INFO = True if int(os.environ['EXTENDEDSTOCKINFO']) == 1 else False
-
-# stock variables: 0 start price | 1 min price | 2 max price | 3 mu | 4 sigma | 
-# 5 correction chance | 6 correction length | 7 correction modifier |
-# 8 0-20 increase chance | 9 20-40 increase chance | 10 40-60 | 11 60-80 | 12 80-100
 
 GROWTH_INCEPTION_DATE = datetime.datetime.strptime("2023-01-01 00:00:00", '%Y-%m-%d %H:%M:%S')
 
@@ -135,14 +131,14 @@ print(f"USE_MANAGED_IDENTITY: {USE_MANAGED_IDENTITY}")
 
 print("")
 
-print("WHO: ", WHO_vars)
-print("WHAT: ", WHAT_vars)
-print("IDK: ", IDK_vars)
-print("WHY: ", WHY_vars)
-print("BCUZ: ", BCUZ_vars)
-print("TMRW: ", TMRW_vars)
-print("TDY: ", TDY_vars)
-print("IDGD: ", IDGD_vars)
+# print("WHO: ", WHO_vars)
+# print("WHAT: ", WHAT_vars)
+# print("IDK: ", IDK_vars)
+# print("WHY: ", WHY_vars)
+# print("BCUZ: ", BCUZ_vars)
+# print("TMRW: ", TMRW_vars)
+# print("TDY: ", TDY_vars)
+# print("IDGD: ", IDGD_vars)
 
 print("STOCKS JSON: ", StocksJson)
 print("Events JSON: ", EventsJson)
@@ -310,13 +306,6 @@ while True:
 
     for record in dataTable:
 
-        # symbol = record.name
-        # stockVariables = record
-        # price = stockVariables.currentPrice
-        # symbol = record[0]
-        # stockVariables = record[1]
-        # price = stockVariables.currentPrice
-
         # apply timers
         # modifier is cumulative across all timers
         currentTimerModifier = 0.0
@@ -377,9 +366,7 @@ while True:
             record.aboveStartingCount += 1
         else:
             record.belowStartingCount += 1
-        
-        # record[1] = record
-        
+                
         extendedStockValue = 0 
         if record.isInCorrection:
             extendedStockValue = 1 if record.isCorrectionUpwards else -1
